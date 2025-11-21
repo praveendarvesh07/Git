@@ -1,0 +1,47 @@
+Transition Plan Dashboard
+
+This project is a single-page HTML dashboard designed to track the weekly effort transition of responsibilities from a Solution Advisor (SA) to Partner Enablement (PE). It includes fixed plan data, dynamic summary metrics, and real-time collaborative task addition powered by Google Firebase Firestore.
+
+Files in this Repository
+
+index.html: The complete, self-contained web application (HTML, CSS via Tailwind CDN, and JavaScript).
+
+README.md: This file.
+
+.gitignore: Standard file to ignore build artifacts.
+
+Features
+
+Real-time Task Collaboration: Users can add new tasks assigned to specific team members (Hanno, Tom, Prashant). These tasks are stored in Firestore and updated instantly for all users.
+
+Progress Tracking: Summary cards display overall progress, total SA effort, total PE effort, and completed weeks.
+
+Responsive Design: Styled using Tailwind CSS for optimal viewing on desktop and mobile devices.
+
+Setup and Deployment
+
+This application is designed to be deployed in an environment that injects specific Firebase configuration variables at runtime.
+
+Local Development (Static Content Only)
+
+Clone this repository:
+
+git clone [your-repo-url]
+cd transition-plan-dashboard
+
+
+Open index.html directly in your web browser.
+
+Note: The Firebase functionality (adding new tasks, real-time updates) will not work locally because the application requires the __firebase_config and __initial_auth_token global variables, which are injected by the target deployment environment (e.g., Google Canvas/App Engine). You will see error messages related to missing Firebase configuration in the console.
+
+Deployment (Firebase/Real-time Enabled)
+
+To enable real-time features, you must deploy this application to an environment that provides the following global JavaScript variables:
+
+__app_id: The unique ID for the application artifact.
+
+__firebase_config: A JSON string containing your Firebase project configuration (API key, project ID, etc.).
+
+__initial_auth_token: A Firebase Custom Auth Token used to sign in the user for Firestore access.
+
+The application uses the following Firestore public collection path: /artifacts/{appId}/public/data/transition_tasks. Ensure your Firebase Security Rules grant read/write access to authenticated users in this path.
