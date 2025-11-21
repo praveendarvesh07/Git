@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transition Plan Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+<div id="app" class="min-h-screen p-4 sm:p-8">
+    <!-- Header -->
+    <header class="mb-8">
+        <h1 class="text-4xl font-extrabold text-gray-900 mb-2">Transition Plan Dashboard</h1>
+        <p class="text-xl text-gray-600">Weekly effort transition from Solution Advisor (SA) to Partner Enablement (PE).</p>
+        <div class="text-sm text-gray-500 mt-2">
+            Current User ID: <span id="userIdDisplay" class="font-mono bg-gray-200 px-2 py-1 rounded text-xs">N/A (Signing in...)</span>
+        </div>
+    </header>
+
+    <!-- Global Message Bar -->
+    <div id="messageContainer" class="hidden"></div>
+
+    <!-- Summary Cards Container (Grid Format) -->
+    <div id="summaryCards" class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+        <!-- Cards will be injected here by JavaScript -->
+    </div>
+
+    <!-- Add New Task Form -->
+    <div class="bg-white p-6 rounded-xl shadow-lg mb-10 border border-purple-200">
+        <h2 class="text-2xl font-semibold text-purple-700 mb-4 flex items-center">
+            <!-- Icon: UserPlus -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-user-plus w-6 h-6 mr-2"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="M22 10h-6"/><path d="M19 7v6"/></svg> Add New Team Task
+        </h2>
+        <form id="addTaskForm" class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+            <div class="md:col-span-2">
+                <label for="taskDescription" class="block text-sm font-medium text-gray-700 mb-1">Task Description</label>
+                <input id="taskDescription" type="text" placeholder="e.g., Follow up on Q4 pipeline review" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500" required>
+            </div>
+            <div>
+                <label for="taskWeek" class="block text-sm font-medium text-gray-700 mb-1">For Week</label>
+                <select id="taskWeek" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 bg-white">
+                    <!-- Options populated by JS -->
+                </select>
+            </div>
+            <div>
+                <label for="taskName" class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <select id="taskName" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 bg-white">
+                    <!-- Options populated by JS -->
+                </select>
+            </div>
+            <button id="submitTaskBtn" type="submit" disabled class="w-full p-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
+                Add Task
+            </button>
+        </form>
+    </div>
+
+    <!-- Detailed Plan Table -->
+    <div class="bg-white p-6 rounded-xl shadow-lg">
+        <h2 class="text-2xl font-semibold text-gray-900 mb-4">Detailed Weekly Transition Plan</h2>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tl-lg">Week</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dates</th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">WD</th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-red-600 uppercase tracking-wider">SA (%)</th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-blue-600 uppercase tracking-wider">PE (%)</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tasks & Notes</th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tr-lg">Done</th>
+                    </tr>
+                </thead>
+                <tbody id="planTableBody" class="bg-white divide-y divide-gray-200">
+                    <!-- Rows will be injected here by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, query, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // --- Global Constants ---
+    const USERS = ['Hanno', 'Tom', 'Prashant'];
+    
+    let db = null;
+    let userId = null;
+    let isAuthReady = false;
+    let userTasks = []; // Holds tasks fetched from Firestore
+
+    // --- Static Data Extracted from the Image (Source of Truth for Plan) ---
+    // Note: The 'completed' status is managed locally for demonstration in this HTML file.
+    let dashboardData = [
+        { id: 1, week: "Week of November 24th", startDate: "11/24/2025", endDate: "11/28/2025", workingDays: 5, saPercentage: 0.90, saHours: 36, pePercentage: 0.10, peHours: 4, tasks: ["DSA: Working on custom asset creation and AE enablement", "PSM: Review partner content, data and internal team meetings"], completed: true, notes: "" },
+        { id: 2, week: "Week of December 1st", startDate: "12/1/2025", endDate: "12/5/2025", workingDays: 5, saPercentage: 0.80, saHours: 32, pePercentage: 0.20, peHours: 20, tasks: ["DSA: Custom assets, AI Initiatives, Opportunity related work", "PSM: Review partner content, partner meetings and internal team calls and introductions"], completed: false, notes: "" },
+        { id: 3, week: "Week of December 8th", startDate: "12/8/2025", endDate: "12/12/2025", workingDays: 5, saPercentage: 0.70, saHours: 28, pePercentage: 0.30, peHours: 12, tasks: ["DSA, AE interaction, support with opportunities, AI Initiatives", "PSM: Schedule call's with respective partner team members, introductions and learnings"], completed: false, notes: "" },
+        { id: 4, week: "Week of December 15th", startDate: "12/15/2025", endDate: "12/19/2025", workingDays: 5, saPercentage: 0.60, saHours: 24, pePercentage: 0.40, peHours: 16, tasks: ["DSA: Custom assets, reusable asset support, internal team support, AE interaction and tasks"], completed: false, notes: "" },
+        { id: 5, week: "Week of December 22nd", startDate: "12/22/2025", endDate: "12/26/2025", workingDays: 3, saPercentage: 0.50, saHours: 12, pePercentage: 0.50, peHours: 12, tasks: ["DSA: Internal team interaction, AI initiatives", "PSM: Partner interaction, meetings and support"], completed: false, notes: "Public Holidays Dec 25th" },
+        { id: 6, week: "Week of December 29th", startDate: "12/29/2025", endDate: "1/2/2026", workingDays: 0, saPercentage: 0.40, saHours: 12.8, pePercentage: 0.60, peHours: 19.2, tasks: ["DSA: Limited availability", "PSM: Limited availability"], completed: false, notes: "Planned leaves" },
+        { id: 7, week: "Week of January 5th", startDate: "1/5/2026", endDate: "1/9/2026", workingDays: 5, saPercentage: 0.30, saHours: 12, pePercentage: 0.70, peHours: 28, tasks: ["DSA: Custom asset and reusable asset support", "PSM: Internal and partner team meetings and support"], completed: false, notes: "" },
+        { id: 8, week: "Week of January 12th", startDate: "1/12/2026", endDate: "1/16/2026", workingDays: 5, saPercentage: 0.20, saHours: 8, pePercentage: 0.80, peHours: 32, tasks: ["DSA: Handover planning, team interaction, AE interaction, custom asset and reusable asset support"], completed: false, notes: "" },
+        { id: 9, week: "Week of January 19th", startDate: "1/19/2026", endDate: "1/23/2026", workingDays: 5, saPercentage: 0.10, saHours: 4, pePercentage: 0.90, peHours: 36, tasks: ["DSA: Final handover and internal team interaction", "PSM: AI PSM work"], completed: false, notes: "" },
+    ];
+
+
+    // --- Utility Functions ---
+
+    /**
+     * Shows a temporary message in the message container.
+     * @param {string} text 
+     * @param {string} type 'info' or 'error'
+     */
+    function displayMessage(text, type = 'info') {
+        const container = document.getElementById('messageContainer');
+        container.textContent = text;
+        container.className = `p-4 mb-6 rounded-lg text-white font-medium shadow-lg transition-opacity duration-300 ${type === 'error' ? 'bg-red-600' : 'bg-blue-600'}`;
+        container.style.display = 'block';
+
+        setTimeout(() => {
+            container.style.display = 'none';
+        }, 5000);
+    }
+
+    /**
+     * Formats a floating point value as a percentage string (e.g., 0.9 -> "90%").
+     * @param {number} value 
+     * @returns {string}
+     */
+    const formatPercent = (value) => `${(value * 100).toFixed(0)}%`;
+
+    /**
+     * Toggles the local completion status of a weekly item and re-renders.
+     * @param {number} id 
+     */
+    function toggleCompleted(id) {
+        dashboardData = dashboardData.map(item =>
+            item.id === id ? { ...item, completed: !item.completed } : item
+        );
+        renderDashboard();
+    }
+
+
+    // --- Rendering Functions ---
+
+    /**
+     * Renders the summary cards and the main table.
+     */
+    function renderDashboard() {
+        if (!isAuthReady) return;
+
+        // 1. Calculate Summary Metrics
+        const totalSAHours = dashboardData.reduce((acc, item) => acc + item.saHours, 0);
+        const totalPEHours = dashboardData.reduce((acc, item) => acc + item.peHours, 0);
+        const totalWeeks = dashboardData.length;
+        const completedWeeks = dashboardData.filter(item => item.completed).length;
+        const overallProgress = (completedWeeks / totalWeeks) * 100;
+
+        const summaryData = [
+            // Icon: TrendingUp
+            { iconSvg: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-up"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg>', title: "Overall Progress", value: overallProgress.toFixed(0), unit: "%", color: "border-green-500" },
+            // Icon: Clock
+            { iconSvg: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clock"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>', title: "Total SA Effort", value: totalSAHours.toFixed(1), unit: "Hours", color: "border-red-500" },
+            // Icon: Zap
+            { iconSvg: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-zap"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></polygon></svg>', title: "Total PE Effort", value: totalPEHours.toFixed(1), unit: "Hours", color: "border-blue-500" },
+            // Icon: Check
+            { iconSvg: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check"><polyline points="20 6 9 17 4 12"/></svg>', title: "Weeks Completed", value: completedWeeks, unit: `of ${totalWeeks} Weeks`, color: "border-yellow-500" },
+        ];
+
+        // 2. Render Summary Cards
+        const cardsHtml = summaryData.map(card => `
+            <div class="p-5 rounded-xl shadow-lg border-t-4 ${card.color} bg-white transition duration-300 hover:shadow-xl">
+                <div class="flex items-center space-x-4">
+                    <div class="p-3 rounded-full ${card.color.replace('border-t-4', 'bg-opacity-20')} text-gray-900">
+                        ${card.iconSvg}
+                    </div>
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">${card.title}</p>
+                        <p class="text-3xl font-bold text-gray-900">${card.value}
+                            <span class="text-base font-normal ml-1 text-gray-500">${card.unit}</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        document.getElementById('summaryCards').innerHTML = cardsHtml;
+
+
+        // 3. Render Table Rows
+        const tableBody = document.getElementById('planTableBody');
+        tableBody.innerHTML = ''; // Clear existing rows
+
+        dashboardData.forEach(item => {
+            const row = document.createElement('tr');
+            row.className = item.completed ? 'bg-green-50/50 hover:bg-green-100' : 'hover:bg-gray-50';
+
+            // Prepare Tasks List HTML
+            let tasksHtml = '<ul class="list-disc ml-4 space-y-1">';
+            
+            // Static Tasks
+            item.tasks.forEach(task => {
+                tasksHtml += `<li>${task}</li>`;
+            });
+
+            // Dynamically Added Tasks (Filter userTasks by weekId)
+            const weekTasks = userTasks.filter(t => t.weekId === item.id);
+            if (weekTasks.length > 0) {
+                // Sort tasks by creation time if available
+                weekTasks.sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
+            }
+
+            weekTasks.forEach(userTask => {
+                tasksHtml += `
+                    <li class="text-purple-700 font-semibold border-l-2 border-purple-500 pl-2 mt-1">
+                        [Assigned to ${userTask.assignedTo}]: ${userTask.description}
+                    </li>
+                `;
+            });
+
+            if (item.notes) {
+                tasksHtml += `<li class="font-semibold text-yellow-700 mt-1">Note: ${item.notes}</li>`;
+            }
+            tasksHtml += '</ul>';
+
+
+            // Create the row content
+            row.innerHTML = `
+                <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.week}</td>
+                <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">${item.startDate} - ${item.endDate}</td>
+                <td class="px-4 py-4 whitespace-nowrap text-sm text-center font-medium text-gray-700">${item.workingDays}</td>
+                <td class="px-4 py-4 whitespace-nowrap text-sm text-center font-bold text-red-500">${formatPercent(item.saPercentage)} (${item.saHours}h)</td>
+                <td class="px-4 py-4 whitespace-nowrap text-sm text-center font-bold text-blue-500">${formatPercent(item.pePercentage)} (${item.peHours}h)</td>
+                <td class="px-4 py-4 text-sm text-gray-700">${tasksHtml}</td>
+                <td class="px-4 py-4 whitespace-nowrap text-center text-sm">
+                    <button
+                        onclick="window.toggleCompleted(${item.id})"
+                        class="p-2 rounded-full transition duration-150 ease-in-out ${
+                            item.completed
+                                ? 'bg-green-500 text-white shadow-md hover:bg-green-600'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }"
+                        aria-label="${item.completed ? "Mark as Incomplete" : "Mark as Completed"}"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check"><polyline points="20 6 9 17 4 12"/></svg>
+                    </button>
+                </td>
+            `;
+
+            tableBody.appendChild(row);
+        });
+    }
+
+    // --- Firebase Logic and Initialization ---
+
+    /**
+     * Handles form submission to add a new task to Firestore.
+     * @param {Event} e 
+     */
+    async function handleAddTask(e) {
+        e.preventDefault();
+        const descriptionInput = document.getElementById('taskDescription');
+        const weekSelect = document.getElementById('taskWeek');
+        const nameSelect = document.getElementById('taskName');
+        
+        const newTaskDescription = descriptionInput.value.trim();
+        const newTaskWeekId = parseInt(weekSelect.value, 10);
+        const newTaskAssignedTo = nameSelect.value;
+        
+        if (!db || !userId || !newTaskDescription) {
+            displayMessage("Task requires sign-in and a description.", 'error');
+            return;
+        }
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const taskRef = collection(db, `artifacts/${appId}/public/data/transition_tasks`);
+        const weekItem = dashboardData.find(item => item.id === newTaskWeekId);
+
+        try {
+            await addDoc(taskRef, {
+                weekId: newTaskWeekId,
+                weekName: weekItem?.week || `ID ${newTaskWeekId}`,
+                description: newTaskDescription,
+                assignedTo: newTaskAssignedTo,
+                createdBy: userId,
+                createdAt: serverTimestamp(),
+                isCompleted: false,
+            });
+
+            descriptionInput.value = '';
+            displayMessage(`Task added for ${weekItem.week} and assigned to ${newTaskAssignedTo}.`, 'info');
+        } catch (error) {
+            console.error("Error adding task:", error);
+            displayMessage("Failed to add task due to a database error.", 'error');
+        }
+    }
+    
+    /**
+     * Initializes Firebase, sets up authentication, and starts the real-time listener.
+     */
+    function initFirebase() {
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        try {
+            const firebaseConfig = JSON.parse(__firebase_config);
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            const firebaseAuth = getAuth(app);
+
+            // Populate form dropdowns immediately
+            populateFormDropdowns();
+
+            // 1. Set up Authentication
+            onAuthStateChanged(firebaseAuth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    isAuthReady = true;
+                    document.getElementById('userIdDisplay').textContent = userId;
+                    document.getElementById('submitTaskBtn').disabled = false;
+                    
+                    // Start Firestore Listener ONLY after auth is ready
+                    setupFirestoreListener(appId);
+                } else {
+                    // Attempt Sign-in
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined') {
+                            await signInWithCustomToken(firebaseAuth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(firebaseAuth);
+                        }
+                    } catch (error) {
+                        console.error("Auth Error:", error);
+                        document.getElementById('userIdDisplay').textContent = 'Error during sign-in';
+                        isAuthReady = true; // Still mark as ready to render static content
+                        renderDashboard();
+                    }
+                }
+            });
+
+        } catch (error) {
+            console.error("Firebase Initialization Error:", error);
+            displayMessage("Failed to initialize Firebase services.", 'error');
+        }
+    }
+    
+    /**
+     * Sets up the real-time listener for user-added tasks.
+     * @param {string} appId 
+     */
+    function setupFirestoreListener(appId) {
+        if (!db) return;
+
+        const tasksCollectionRef = collection(db, `artifacts/${appId}/public/data/transition_tasks`);
+        const tasksQuery = query(tasksCollectionRef);
+
+        onSnapshot(tasksQuery, (snapshot) => {
+            userTasks = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            // Re-render the dashboard whenever tasks change
+            renderDashboard(); 
+        }, (error) => {
+            console.error("Error fetching user tasks:", error);
+            displayMessage("Failed to fetch shared tasks in real-time.", 'error');
+        });
+    }
+
+    /**
+     * Populates the Week and Name dropdowns in the Add Task form.
+     */
+    function populateFormDropdowns() {
+        const weekSelect = document.getElementById('taskWeek');
+        const nameSelect = document.getElementById('taskName');
+
+        // Populate Week Dropdown
+        dashboardData.forEach(item => {
+            const option = document.createElement('option');
+            option.value = item.id;
+            option.textContent = item.week;
+            weekSelect.appendChild(option);
+        });
+
+        // Populate Name Dropdown
+        USERS.forEach(user => {
+            const option = document.createElement('option');
+            option.value = user;
+            option.textContent = user;
+            nameSelect.appendChild(option);
+        });
+    }
+
+
+    // --- Event Listeners and Startup ---
+    window.onload = function() {
+        initFirebase();
+        
+        // Attach event listener to the form
+        document.getElementById('addTaskForm').addEventListener('submit', handleAddTask);
+        
+        // Expose toggleCompleted globally for button click (since it's inside module scope)
+        window.toggleCompleted = toggleCompleted;
+    };
+
+</script>
+</body>
+</html>
