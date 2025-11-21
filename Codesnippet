@@ -1,0 +1,39 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.core
+
+# Dependency directories
+node_modules
+/jspm_packages/
+
+# IDE files
+.vscode
+.idea
+
+# Build/Dist folders
+/dist
+/build
+
+# Environment variables
+.env
+.env.development
+.env.production
+.env.test
+
+# Firebase/Canvas specific artifacts (Simulated)
+__app_id
+__firebase_config
+__initial_auth_token
+
+
+These three files should give you a good starting point for your GitHub repository. The `index.html` is complete and self-contained, and the `README.md` explains the deployment requirements.
