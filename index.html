@@ -332,6 +332,7 @@
                     // Attempt Sign-in
                     try {
                         if (typeof __initial_auth_token !== 'undefined') {
+                            console.log("Login Ticket:", __initial_auth_token);
                             await signInWithCustomToken(firebaseAuth, __initial_auth_token);
                         } else {
                             await signInAnonymously(firebaseAuth);
