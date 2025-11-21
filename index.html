@@ -12,12 +12,10 @@
         import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
         
         // --- SUPABASE CONFIG ---
-        // Project URL and Anon Key are now fully configured with the values you provided.
         const SUPABASE_URL = 'https://tlnfqepjzstgnydxnylp.supabase.co'; 
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRsbmZxZXBqenN0Z255ZHhueWxwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2NDk0OTAsImV4cCI6MjA3OTIyNTQ5MH0.j64hQXEExQjzX6DcM8YSw1SYehvbj2TV6cvaJLfhjn8'; 
         
         // --- GLOBAL SETUP ---
-        const TABLE_COMPLETION = 'transition_plan_tasks';
         const TABLE_ADDITIONAL = 'additional_tasks';
         let supabase = null;
         // Use a unique ID to simulate private user scope for completion tracking
@@ -25,8 +23,6 @@
         
         const AVAILABLE_USERS = ['Hanno', 'Tom', 'Prashant'];
         
-        let pieChartInstance = null; // Variable to hold the Chart.js instance
-
         // Sample Data transcribed from the uploaded image, now with new naming convention
         const transitionData = [
             { week: 'Week of Nov 24th', startDate: '11/24/2025', endDate: '11/28/2025', effectiveDays: 5, saPct: 0.90, saHours: 36, partnerPct: 0.10, partnerHours: 4, tasks: 'DSA: Working on custom asset creation and AE enablement. PSM: Review partner content, data and internal team meetings.', notes: '' },
@@ -56,31 +52,67 @@
             `;
         }
         
+        /**
+         * Parses the task string (e.g., "DSA: task. PSM: task.") into separate, formatted HTML blocks.
+         */
+        function parseTasks(taskString) {
+            const parts = { DSA: '', PSM: '' };
+            let currentKey = '';
+            
+            // Split the string based on "DSA:" or "PSM:"
+            const segments = taskString.split(/(DSA:|PSM:)/).filter(s => s.trim() !== '');
+
+            for (let i = 0; i < segments.length; i++) {
+                const segment = segments[i].trim();
+                if (segment === 'DSA:') {
+                    currentKey = 'DSA';
+                } else if (segment === 'PSM:') {
+                    currentKey = 'PSM';
+                } else if (currentKey) {
+                    // Append the task description to the current key
+                    parts[currentKey] += segment.trim();
+                    currentKey = ''; // Reset key after description is processed
+                }
+            }
+            
+            let html = '';
+
+            // Render DSA tasks
+            if (parts.DSA) {
+                html += `
+                    <div class="mt-2 p-2 rounded-lg bg-indigo-50 border-l-4 border-indigo-400">
+                        <span class="font-semibold text-indigo-700">DSA Tasks:</span>
+                        <p class="text-sm text-indigo-600">${parts.DSA}</p>
+                    </div>
+                `;
+            }
+
+            // Render PSM tasks
+            if (parts.PSM) {
+                 html += `
+                    <div class="mt-2 p-2 rounded-lg bg-teal-50 border-l-4 border-teal-400">
+                        <span class="font-semibold text-teal-700">PSM Tasks:</span>
+                        <p class="text-sm text-teal-600">${parts.PSM}</p>
+                    </div>
+                `;
+            }
+
+            return html;
+        }
+
         // Custom error rendering function for table creation guidance
         function renderSupabaseSetupError() {
             document.getElementById('dashboard-content').innerHTML = `
                 <div class="p-8 text-center text-red-700 bg-red-100 rounded-xl shadow-lg mt-8">
                     <p class="font-bold text-xl">Supabase Setup Required</p>
-                    <p class="mt-4 text-sm">One or both required tables (<code class="font-mono bg-red-200 p-1 rounded">${TABLE_COMPLETION}</code>, <code class="font-mono bg-red-200 p-1 rounded">${TABLE_ADDITIONAL}</code>) could not be found or accessed.</p>
+                    <p class="mt-4 text-sm">The required table (<code class="font-mono bg-red-200 p-1 rounded">${TABLE_ADDITIONAL}</code>) could not be found or accessed.</p>
                     
                     <div class="mt-6 p-4 bg-white border border-red-300 rounded-lg text-left">
                         <p class="font-semibold text-base mb-2 text-gray-800">Action Required: Verify Tables</p>
-                        <p class="text-sm text-gray-700 mb-2">Please ensure both tables are created and Row Level Security (RLS) policies are set up as previously instructed. You can run these two blocks of SQL:</p>
+                        <p class="text-sm text-gray-700 mb-2">Since we removed the weekly tracking, only the <code class="font-mono bg-red-200 p-1 rounded">additional_tasks</code> table is strictly required. Please ensure it is created and Row Level Security (RLS) policies are set up. You can run this block of SQL in your Supabase SQL editor:</p>
                         
-                        <div class="mb-4">
-                            <p class="font-mono bg-gray-200 p-2 rounded text-sm font-semibold">1. transition_plan_tasks (for completion checkboxes)</p>
-                            <pre class="bg-gray-800 text-green-300 p-3 rounded-lg overflow-x-auto text-xs font-mono whitespace-pre-wrap mt-1">
-CREATE TABLE public.transition_plan_tasks (
-    week text NOT NULL PRIMARY KEY,
-    user_id text NOT NULL,
-    completed boolean NOT NULL DEFAULT false
-);
-ALTER TABLE public.transition_plan_tasks ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow read/write access based on user_id" ON public.transition_plan_tasks FOR ALL USING (true);
-                            </pre>
-                        </div>
                         <div>
-                            <p class="font-mono bg-gray-200 p-2 rounded text-sm font-semibold">2. additional_tasks (for Hanno, Tom, Prashant's input)</p>
+                            <p class="font-mono bg-gray-200 p-2 rounded text-sm font-semibold">1. additional_tasks (for Hanno, Tom, Prashant's input)</p>
                             <pre class="bg-gray-800 text-green-300 p-3 rounded-lg overflow-x-auto text-xs font-mono whitespace-pre-wrap mt-1">
 CREATE TABLE public.additional_tasks (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -125,29 +157,16 @@ CREATE POLICY "Allow all authenticated users to read and write additional tasks"
         // --- SUPABASE DATA OPERATIONS ---
 
         /**
-         * Fetches all necessary data (completion status and additional tasks) 
+         * Fetches all necessary data (additional tasks) 
          * and sets up real-time listeners.
          */
         async function listenForTaskStatus() {
             if (!supabase) return;
 
-            // 1. Initial Data Fetch (Combined)
+            // 1. Initial Data Fetch 
             await fetchAndRender();
 
-            // 2. Setup Real-time Subscriptions (Optional but good practice)
-            // Note: Realtime subscription requires enabling Realtime for both tables in Supabase.
-
-            // Listener for completion status changes
-            supabase.channel('completion-updates')
-                .on('postgres_changes', { 
-                    event: '*', 
-                    schema: 'public', 
-                    table: TABLE_COMPLETION,
-                    filter: `user_id=eq.${userId}` 
-                }, fetchAndRender)
-                .subscribe();
-                
-            // Listener for additional task changes
+            // 2. Setup Real-time Subscription for additional task changes
             supabase.channel('additional-task-updates')
                 .on('postgres_changes', { 
                     event: '*', 
@@ -158,79 +177,31 @@ CREATE POLICY "Allow all authenticated users to read and write additional tasks"
         }
         
         /**
-         * Fetches the latest completion status and additional tasks, then re-renders.
+         * Fetches the latest additional tasks, then re-renders.
          */
         async function fetchAndRender(payload = null) {
-            let completionMap = {};
             let additionalTasks = [];
-            let errorOccurred = false;
 
-            // Fetch 1: Completion Status
-            const { data: completionData, error: completionError } = await supabase
-                .from(TABLE_COMPLETION)
-                .select('week, completed')
-                .eq('user_id', userId);
-
-            if (completionError) {
-                if (completionError.code === "PGRST205") {
-                     renderSupabaseSetupError();
-                     return;
-                }
-                console.error("Supabase completion fetch error:", completionError);
-                errorOccurred = true;
-            } else {
-                completionData.forEach(item => { completionMap[item.week] = item.completed; });
-            }
-
-            // Fetch 2: Additional Tasks
+            // Fetch Additional Tasks
             const { data: additionalData, error: additionalError } = await supabase
                 .from(TABLE_ADDITIONAL)
-                .select('week, added_by, task_description');
+                .select('id, week, added_by, task_description');
             
             if (additionalError) {
+                 // Check for the "table not found" error code
                  if (additionalError.code === "PGRST205") {
                      renderSupabaseSetupError();
                      return;
                 }
                 console.error("Supabase additional tasks fetch error:", additionalError);
-                errorOccurred = true;
+                // Render the dashboard with empty tasks if another error occurred
+                renderDashboard(additionalTasks);
             } else {
                 additionalTasks = additionalData;
-            }
-
-            // If an error occurred (but not a setup error), render empty dashboard
-            if (errorOccurred) {
-                renderDashboard(completionMap, additionalTasks);
-            } else {
-                renderDashboard(completionMap, additionalTasks);
+                renderDashboard(additionalTasks);
             }
         }
 
-
-        /**
-         * Toggles the completion status of a task and updates Supabase.
-         */
-        window.toggleCompletion = async (weekId, completed) => {
-            if (!supabase) { console.error("Supabase client not initialized."); return; }
-            try {
-                const { error } = await supabase
-                    .from(TABLE_COMPLETION)
-                    .upsert({ 
-                        week: weekId, 
-                        user_id: userId, 
-                        completed: completed 
-                    }, { onConflict: 'week, user_id' }); 
-
-                if (error) throw error;
-                // Fetch and Render will handle the update via the Realtime listener
-            } catch (e) {
-                console.error("Error updating Supabase completion status:", e);
-                // Simple feedback for the user
-                document.getElementById('status-message').innerHTML = `<div class="p-2 text-sm text-red-700 bg-red-100 rounded-md">Error saving completion status. Check console.</div>`;
-                setTimeout(() => document.getElementById('status-message').innerHTML = '', 3000);
-            }
-        };
-        
         /**
          * Submits a new additional task to the database.
          */
@@ -261,11 +232,13 @@ CREATE POLICY "Allow all authenticated users to read and write additional tasks"
 
                 loadingMessage.classList.add('hidden');
                 if (error) throw error;
+                
+                // Explicitly call fetchAndRender to ensure the UI updates immediately after adding a task.
+                fetchAndRender(); 
 
                 document.getElementById('status-message').innerHTML = `<div class="p-2 text-sm text-green-700 bg-green-100 rounded-md">Task added successfully!</div>`;
                 setTimeout(() => document.getElementById('status-message').innerHTML = '', 3000);
                 form.reset();
-                // Fetch and Render will handle the update via the Realtime listener
             } catch (e) {
                 loadingMessage.classList.add('hidden');
                 console.error("Error adding additional task:", e);
@@ -274,101 +247,165 @@ CREATE POLICY "Allow all authenticated users to read and write additional tasks"
             }
         };
 
-
-        // --- DASHBOARD RENDERING ---
-
-        function renderPieChart(completedWeeks, totalWeeks) {
-            const ctx = document.getElementById('progressPieChart').getContext('2d');
-
-            if (pieChartInstance) {
-                pieChartInstance.destroy();
+        /**
+         * Deletes a user-added task by its ID.
+         */
+        window.deleteAdditionalTask = async (taskId) => {
+            if (!supabase) { 
+                console.error("Supabase client not initialized."); 
+                document.getElementById('status-message').innerHTML = `<div class="p-2 text-sm text-red-700 bg-red-100 rounded-md">Cannot delete: Supabase not initialized.</div>`;
+                setTimeout(() => document.getElementById('status-message').innerHTML = '', 3000);
+                return; 
+            }
+            
+            // NOTE: Using window.confirm() as a temporary measure instead of custom modal UI
+            if (!window.confirm("Are you sure you want to delete this task?")) {
+                return;
             }
 
-            const data = {
-                labels: ['Completed Weeks', 'Remaining Weeks'],
-                datasets: [{
-                    data: [completedWeeks, totalWeeks - completedWeeks],
-                    backgroundColor: [
-                        '#10B981', // Green-500
-                        '#E5E7EB'  // Gray-200
-                    ],
-                    hoverOffset: 4
-                }]
-            };
+            // Provide immediate feedback
+            document.getElementById('status-message').innerHTML = `<div class="p-2 text-sm text-gray-700 bg-gray-100 rounded-md">Deleting task...</div>`;
 
-            const config = {
-                type: 'doughnut',
-                data: data,
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    cutout: '70%',
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                usePointStyle: true,
-                                boxWidth: 6,
-                                padding: 20
-                            }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    let label = context.label || '';
-                                    if (label) {
-                                        label += ': ';
-                                    }
-                                    if (context.parsed !== null) {
-                                        label += context.parsed + ' weeks';
-                                    }
-                                    return label;
-                                }
-                            }
+            try {
+                console.log(`Attempting to delete task ID: ${taskId}`);
+                const { error } = await supabase
+                    .from(TABLE_ADDITIONAL)
+                    .delete()
+                    .eq('id', taskId);
+
+                if (error) throw error;
+                
+                // Explicitly call fetchAndRender to ensure the UI updates immediately after deletion.
+                fetchAndRender(); 
+                
+                console.log(`Task ID ${taskId} deleted successfully.`);
+                document.getElementById('status-message').innerHTML = `<div class="p-2 text-sm text-yellow-700 bg-yellow-100 rounded-md">Task deleted.</div>`;
+                setTimeout(() => document.getElementById('status-message').innerHTML = '', 3000);
+            } catch (e) {
+                console.error(`Error deleting task ID ${taskId}:`, e);
+                document.getElementById('status-message').innerHTML = `<div class="p-2 text-sm text-red-700 bg-red-100 rounded-md">Error deleting task. Check console for details.</div>`;
+                setTimeout(() => document.getElementById('status-message').innerHTML = '', 5000);
+            }
+        };
+
+
+        // --- CHART RENDERING (New Weekly Charts) ---
+
+        /**
+         * Renders the individual SA vs Partner doughnut chart for each week in the table.
+         * This must be called AFTER the table elements (canvases) are rendered to the DOM.
+         */
+        function drawWeeklyCharts() {
+            // Destroy existing charts to prevent duplication issues
+            Chart.helpers.each(Chart.instances, function(instance){
+                instance.destroy();
+            });
+
+            transitionData.forEach(data => {
+                // Generate unique ID based on the week name
+                const canvasId = `chart-${data.week.replace(/[^a-zA-Z0-9]/g, '')}`;
+                const ctx = document.getElementById(canvasId);
+
+                if (ctx) {
+                    const saPct = data.saPct;
+                    const partnerPct = data.partnerPct;
+                    
+                    // Display percentage in the middle of the doughnut (using Chart.js plugin structure)
+                    const centerTextPlugin = {
+                        id: 'centerText',
+                        beforeDraw: (chart) => {
+                            const { width, height, ctx } = chart;
+                            ctx.restore();
+                            // Adjust font size dynamically
+                            const fontSize = (height / 80).toFixed(2);
+                            ctx.font = `${fontSize}em sans-serif`;
+                            ctx.textBaseline = 'middle';
+
+                            const text = `${(partnerPct * 100).toFixed(0)}%`; // Show Partner % in center
+                            const textX = Math.round((width - ctx.measureText(text).width) / 2);
+                            const textY = height / 2;
+
+                            ctx.fillStyle = '#111827'; // Tailwind gray-900
+                            ctx.fillText(text, textX, textY);
+                            ctx.save();
                         }
-                    }
-                }
-            };
+                    };
 
-            pieChartInstance = new Chart(ctx, config);
+                    new Chart(ctx.getContext('2d'), {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Solution Advisor', 'Partner Enablement'],
+                            datasets: [{
+                                // Data passed as absolute percentages (0-100)
+                                data: [saPct * 100, partnerPct * 100], 
+                                backgroundColor: [
+                                    '#F87171', // Red-400 for SA
+                                    '#2563EB'  // Blue-600 for Partner
+                                ],
+                                borderWidth: 0,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            cutout: '80%',
+                            plugins: {
+                                legend: { display: false },
+                                centerText: centerTextPlugin, // Use the custom plugin
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            const label = context.label || '';
+                                            // Format the value back to 0-100%
+                                            const value = context.parsed.toFixed(0) + '%'; 
+                                            return label + ': ' + value;
+                                        }
+                                    }
+                                }
+                            },
+                        },
+                        plugins: [centerTextPlugin]
+                    });
+                }
+            });
         }
 
-        function renderDashboard(completionMap = {}, additionalTasks = []) {
+        function renderDashboard(additionalTasks = []) {
             const container = document.getElementById('dashboard-content');
             if (!container) return;
 
             // 1. Calculate Summary Metrics
             const totalWeeks = transitionData.length;
-            const completedWeeks = transitionData.filter(d => completionMap[d.week]).length;
-            const completionRate = completedWeeks / totalWeeks;
             
             // Find the current week index 
             let currentWeekIndex = transitionData.findIndex(d => new Date(d.endDate) >= new Date());
             if (currentWeekIndex === -1) {
+                // If all weeks are in the past, default to the last week
                 currentWeekIndex = transitionData.length - 1;
             }
 
             // Calculate average enablement for the entire plan
             const totalPartnerPct = transitionData.reduce((sum, d) => sum + d.partnerPct, 0);
-            const avgPartnerEnablement = totalPartnerPct / totalWeeks;
+            const avgPartnerEnablement = totalWeeks > 0 ? totalPartnerPct / totalWeeks : 0;
 
-            // 2. Generate Summary HTML
+            // 2. Generate Summary HTML 
             const summaryHTML = `
                 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
                     
-                    <!-- Metrics Cards (Col 1-9) -->
-                    <div class="lg:col-span-9 grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Metrics Cards (Col 1-12) -->
+                    <div class="lg:col-span-12 grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div class="bg-white p-6 rounded-xl shadow-lg border-l-4 border-indigo-500">
                             <p class="text-sm text-gray-500 font-medium">Total Weeks in Plan</p>
                             <p class="text-3xl font-bold text-gray-800 mt-1">${totalWeeks}</p>
                         </div>
-                        <div class="bg-white p-6 rounded-xl shadow-lg border-l-4 border-green-500">
-                            <p class="text-sm text-gray-500 font-medium">Weeks Completed</p>
-                            <p class="text-3xl font-bold text-green-600 mt-1">${completedWeeks} / ${totalWeeks}</p>
-                        </div>
                         <div class="bg-white p-6 rounded-xl shadow-lg border-l-4 border-blue-500">
                             <p class="text-sm text-gray-500 font-medium">Avg. Partner Enablement</p>
                             <p class="text-3xl font-bold text-blue-600 mt-1">${formatPercent(avgPartnerEnablement)}</p>
+                        </div>
+                        <div class="bg-white p-6 rounded-xl shadow-lg border-l-4 border-yellow-500">
+                            <p class="text-sm text-gray-500 font-medium">Current Week</p>
+                            <p class="text-xl font-bold text-yellow-600 mt-2">${transitionData[currentWeekIndex].week}</p>
+                            <p class="text-xs text-gray-400">${transitionData[currentWeekIndex].startDate} - ${transitionData[currentWeekIndex].endDate}</p>
                         </div>
                         
                         <!-- Progress Bar below the metrics -->
@@ -377,29 +414,21 @@ CREATE POLICY "Allow all authenticated users to read and write additional tasks"
                         <!-- Add Task Form -->
                         ${renderAddTaskForm()}
                     </div>
-
-                    <!-- Pie Chart (Col 10-12) -->
-                    <div class="lg:col-span-3 bg-white p-6 rounded-xl shadow-lg flex flex-col items-center border border-gray-100">
-                        <h3 class="text-xl font-semibold text-gray-800 mb-4">Plan Progress</h3>
-                        <div class="w-full h-48 flex justify-center items-center">
-                            <canvas id="progressPieChart"></canvas>
-                        </div>
-                        <p class="text-2xl font-bold text-indigo-600 mt-4">${formatPercent(completionRate)} Complete</p>
-                    </div>
                 </div>
             `;
 
-            // 3. Generate Detailed Table
-            const tableHTML = renderTable(completionMap, additionalTasks, currentWeekIndex);
+            // 3. Generate Detailed Cards
+            const cardsHTML = renderWeeklyCards(additionalTasks, currentWeekIndex);
 
             // 4. Combine and display
-            container.innerHTML = summaryHTML + tableHTML;
+            container.innerHTML = summaryHTML + cardsHTML;
 
-            // 5. Render Chart after the canvas element is in the DOM
-            renderPieChart(completedWeeks, totalWeeks);
+            // 5. Render Charts after the canvas elements are in the DOM
+            drawWeeklyCharts(); 
         }
         
         function renderProgressBar(currentWeekIndex) {
+            // This bar reflects the SA/Partner split for the current week.
             const latestDataIndex = currentWeekIndex > 0 ? currentWeekIndex : 0;
             const latestData = transitionData[latestDataIndex];
             
@@ -408,7 +437,7 @@ CREATE POLICY "Allow all authenticated users to read and write additional tasks"
 
             return `
                 <div class="col-span-full bg-white p-6 rounded-xl shadow-lg border border-gray-100">
-                    <h3 class="text-xl font-semibold text-gray-800 mb-4">Enablement Split (${latestData.week})</h3>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-4">Overall Enablement Split Trend</h3>
                     <div class="mb-4">
                         <div class="flex justify-between mb-1">
                             <span class="text-sm font-medium text-red-700">Solution Advisor (${saWidth}%)</span>
@@ -423,7 +452,7 @@ CREATE POLICY "Allow all authenticated users to read and write additional tasks"
                             </div>
                         </div>
                     </div>
-                    <p class="text-sm text-gray-500 mt-2">Transition from SA dominance (red) to Partner independence (blue).</p>
+                    <p class="text-sm text-gray-500 mt-2">The bar reflects the split during the current week (${latestData.week}).</p>
                 </div>
             `;
         }
@@ -465,77 +494,98 @@ CREATE POLICY "Allow all authenticated users to read and write additional tasks"
             `;
         }
         
-        function renderTable(completionMap, additionalTasks, currentWeekIndex) {
+        function renderWeeklyCards(additionalTasks, currentWeekIndex) {
             const groupedAdditionalTasks = additionalTasks.reduce((acc, task) => {
                 if (!acc[task.week]) acc[task.week] = [];
                 acc[task.week].push(task);
                 return acc;
             }, {});
 
-            const tableRows = transitionData.map((data, index) => {
-                const isCompleted = completionMap[data.week] || false;
+            const cards = transitionData.map((data, index) => {
                 const isCurrent = index === currentWeekIndex;
-                const rowClass = isCompleted ? 'bg-green-50/50 hover:bg-green-100' : (isCurrent ? 'bg-yellow-50 hover:bg-yellow-100' : 'bg-white hover:bg-gray-50');
+                // Since completion tracking is removed, we only highlight the current week.
+                const cardBorderColor = isCurrent ? 'border-yellow-500' : 'border-gray-200';
+                const headerBg = isCurrent ? 'bg-yellow-100' : 'bg-gray-50';
+                const weekChartId = `chart-${data.week.replace(/[^a-zA-Z0-9]/g, '')}`;
 
-                const weekStatus = new Date(data.endDate) < new Date() ? 'text-gray-400' : 'text-gray-800';
-                
                 const additionalTasksForWeek = groupedAdditionalTasks[data.week] || [];
                 const additionalTasksHtml = additionalTasksForWeek.map(task => `
-                    <div class="mt-1 pt-1 border-t border-gray-100 text-xs text-gray-700 bg-indigo-50/50 p-1 rounded">
-                        <span class="font-semibold text-indigo-700">[${task.added_by}]</span>: ${task.task_description}
-                    </div>
+                    <li class="mt-2 text-xs text-gray-700 bg-indigo-50/50 p-2 rounded-lg border-l-2 border-indigo-400 flex justify-between items-start">
+                        <span class="flex-grow">
+                            <span class="font-semibold text-indigo-700 block text-sm">${task.added_by}</span>: ${task.task_description}
+                        </span>
+                        <button onclick="deleteAdditionalTask('${task.id}')" 
+                                class="ml-2 text-red-500 hover:text-red-700 transition duration-150 focus:outline-none focus:ring-2 focus:ring-red-500 rounded-full p-1"
+                                aria-label="Delete task">
+                            <!-- SVG Trash Icon -->
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.723-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </li>
                 `).join('');
 
                 return `
-                    <tr class="${rowClass} border-b border-gray-200 transition duration-150">
-                        <td class="p-4 text-sm font-semibold sticky left-0 bg-inherit z-10 rounded-l-xl md:rounded-l-none">${data.week}</td>
-                        <td class="p-4 text-sm ${weekStatus}">${data.startDate} - ${data.endDate}</td>
-                        <td class="p-4 text-sm text-center">${data.effectiveDays}</td>
+                    <div class="bg-white rounded-xl shadow-lg border-t-4 ${cardBorderColor} overflow-hidden transform hover:shadow-xl transition duration-300">
                         
-                        <td class="p-4 text-sm font-medium text-red-600">
-                            ${formatPercent(data.saPct)}
-                        </td>
-                        <td class="p-4 text-sm font-medium text-blue-600">
-                            ${formatPercent(data.partnerPct)}
-                        </td>
+                        <!-- Card Header & Status -->
+                        <div class="${headerBg} p-4 flex justify-between items-center">
+                            <h4 class="text-xl font-bold text-gray-900">${data.week}</h4>
+                        </div>
 
-                        <td class="p-4 text-sm max-w-xs text-gray-600">
-                            <div class="text-sm text-gray-800 font-medium mb-1">Pre-defined Tasks:</div>
-                            ${data.tasks}
-                            ${additionalTasksHtml}
-                        </td>
-                        <td class="p-4 text-sm text-yellow-600">${data.notes}</td>
+                        <div class="p-4 grid grid-cols-2 gap-4">
+                            <!-- Split Chart -->
+                            <div class="col-span-1 flex flex-col justify-center items-center">
+                                <div class="h-24 w-24">
+                                    <canvas id="${weekChartId}"></canvas>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-2">SA vs Partner Split</p>
+                            </div>
 
-                        <td class="p-4 text-center">
-                            <input type="checkbox" 
-                                class="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
-                                ${isCompleted ? 'checked' : ''}
-                                onchange="toggleCompletion('${data.week}', this.checked)">
-                        </td>
-                    </tr>
+                            <!-- Metrics -->
+                            <div class="col-span-1 space-y-2">
+                                <div class="p-2 bg-red-50 rounded-lg text-sm">
+                                    <span class="font-semibold text-red-700">SA:</span> ${formatPercent(data.saPct)} (${data.saHours} hrs)
+                                </div>
+                                <div class="p-2 bg-blue-50 rounded-lg text-sm">
+                                    <span class="font-semibold text-blue-700">Partner:</span> ${formatPercent(data.partnerPct)} (${data.partnerHours} hrs)
+                                </div>
+                                <div class="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
+                                    Dates: ${data.startDate} - ${data.endDate}
+                                    <br>
+                                    Eff. Days: ${data.effectiveDays}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tasks Section -->
+                        <div class="p-4 border-t border-gray-100">
+                            <h5 class="text-sm font-semibold text-gray-800 mb-2">Primary Tasks:</h5>
+                            ${parseTasks(data.tasks)}
+                            
+                            <!-- Additional Tasks -->
+                            ${additionalTasksForWeek.length > 0 ? `
+                                <h5 class="text-sm font-semibold text-indigo-700 mt-4 mb-1">Collaborative Tasks:</h5>
+                                <ul class="list-none space-y-1">
+                                    ${additionalTasksHtml}
+                                </ul>
+                            ` : ''}
+                        </div>
+
+                        <!-- Notes -->
+                        ${data.notes ? `
+                            <div class="p-4 bg-yellow-50 text-xs text-yellow-700 border-t border-gray-100">
+                                <span class="font-bold">Note:</span> ${data.notes}
+                            </div>
+                        ` : ''}
+                    </div>
                 `;
             }).join('');
 
             return `
-                <h3 class="text-xl font-semibold text-gray-800 mb-4 mt-8">Transition Plan Details</h3>
-                <div class="overflow-x-auto bg-white rounded-xl shadow-lg border border-gray-100">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50 sticky top-0">
-                            <tr>
-                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider sticky left-0 bg-gray-50">Week</th>
-                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Dates</th>
-                                <th class="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">Eff. Days</th>
-                                <th class="px-4 py-3 text-left text-xs font-bold text-red-600 uppercase tracking-wider w-20">SA (%)</th>
-                                <th class="px-4 py-3 text-left text-xs font-bold text-blue-600 uppercase tracking-wider w-20">Partner (%)</th>
-                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider max-w-sm">Tasks (Pre-defined + Added)</th>
-                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Notes</th>
-                                <th class="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">Done</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-200">
-                            ${tableRows}
-                        </tbody>
-                    </table>
+                <h3 class="text-xl font-semibold text-gray-800 mb-4 mt-8">Weekly Breakdown</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    ${cards}
                 </div>
             `;
         }
@@ -554,13 +604,18 @@ CREATE POLICY "Allow all authenticated users to read and write additional tasks"
         input[type="checkbox"]:focus {
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.5); /* Indigo focus ring */
         }
+        /* Custom styling for the SVG delete button to ensure it aligns properly */
+        .items-start button {
+            flex-shrink: 0;
+            margin-top: 2px; /* Slight vertical adjustment */
+        }
     </style>
 </head>
 <body class="p-4 md:p-8">
     <div class="max-w-7xl mx-auto">
         <header class="mb-8 p-6 bg-white rounded-xl shadow-lg border-t-4 border-indigo-600">
             <h1 class="text-3xl font-extrabold text-gray-900">Transition Plan Dashboard</h1>
-            <p class="text-gray-500 mt-1">Real-time visualization of weekly tasks and enablement progress.</p>
+            <p class="text-gray-500 mt-1">Visual status tracking for partner enablement transition.</p>
             <p id="user-id-display" class="text-xs text-gray-400 mt-2">Session ID: Initializing...</p> 
         </header>
 
